@@ -97,7 +97,7 @@ shinyServer(function(input, output) {
     values$g_bar <- mean(values$g)
     values$sse_g <- sum( (values$g-values$g_bar)^2 )
     values$beta1 <- sum((values$f - values$f_bar)*(values$g-values$g_bar)) / values$sse_g
-    values$beta0 <- values$f_bar - values$beta1 * values$f_bar
+    values$beta0 <- values$f_bar - values$beta1 * values$g_bar
 
     set.seed(1)
     
