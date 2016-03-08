@@ -20,7 +20,7 @@ shinyServer(function(input, output) {
   
   sampleNarrow <- function(n.Y) {
     X <- rnorm(n.Y, mean=mean.g, sd=sd.g)
-    X + rnorm(n.Y, sd=2)
+    X + rnorm(n.Y, mean=0, sd=2)
   }
   
   k <- function(x) {
@@ -28,28 +28,31 @@ shinyServer(function(input, output) {
   }
   
   
-  onesim <- function(h, n.Y, grid.n, sampleY) {
+  onesim <- function(h, h2, n.Y, grid.n, sampleY) {
     # get a sample for Y
     Y <- sampleY(n.Y)
     # matrix with n.Y rows, 1 column per grid point, each cell is Y[i]-grid[j]
     dist.mat <- outer(Y, values$grid.x, FUN=function(Y, x) Y-x)
     # divide the difference by the bandwidth
     X.h <- dist.mat / h
+    X.h2 <- dist.mat / h2
     # apply the kernel
     kX <- k(X.h)
+    kX2 <- k(X.h2)
     # sum the columns (the sample points) and divide by n*h
     f_hat <- colSums(kX) / (h*n.Y)
+    f_hat2 <- colSums(kX2) / (h2*n.Y)
     # compute the regression
     f_hat_bar <- mean(f_hat)
     beta1_hat <- sum( (f_hat-f_hat_bar) * (values$g-values$g_bar) ) / values$sse_g
     beta0_hat <- f_hat_bar - beta1_hat * values$g_bar
     # compute errors of 3 types: RSS and R^2 on regression, MSE on KDE estimate of f
-    rss <- sum( (f_hat - f_hat_bar - beta1_hat*(values$g-values$g_bar))^2 )
-    sst <- sum( (f_hat - f_hat_bar)^2 )
+    rss <- sum( (f_hat2 - f_hat_bar - beta1_hat*(values$g-values$g_bar))^2 )
+    sst <- sum( (f_hat2 - f_hat_bar)^2 )
     rsquared <- 1 - rss/sst
     mse <- mean( (values$f - f_hat)^2 )
     
-    list(f_hat=f_hat, beta1_hat=beta1_hat, beta0_hat=beta0_hat, rss=rss, sst=sst, rsquared=rsquared, mse=mse)
+    list(f_hat=f_hat, f_hat2=f_hat2, beta1_hat=beta1_hat, beta0_hat=beta0_hat, rss=rss, sst=sst, rsquared=rsquared, mse=mse)
   }
   
   # support for this problem
@@ -67,6 +70,7 @@ shinyServer(function(input, output) {
   MC.frame <- reactive({
     # get values from UI
     values$h <- input$h
+    values$h2 <- input$h2
 
     # number of samples of Y to compute f_hat
     values$n.Y <- input$n.Y
@@ -85,8 +89,8 @@ shinyServer(function(input, output) {
       values$f <- dnorm(values$grid.x, mean=mean.g, sd=sd.g)
     } else {
       sampleY <- sampleNarrow
-      X <- dnorm(values$grid.x, mean=mean.g, sd=sd.g)
-      values$f <- X^2
+      #X <- dnorm(values$grid.x, mean=mean.g, sd=sd.g)
+      values$f <- dnorm(values$grid.x, mean=mean.g, sd=sd.g)
     }
 
     # The true function g, evaluated on the grid (X values for regression)
@@ -101,9 +105,23 @@ shinyServer(function(input, output) {
 
     set.seed(1)
     
-    MC.out <- t(replicate(MC, onesim(values$h, values$n.Y, values$grid.n, sampleY), simplify=TRUE))
+    MC.out <- t(replicate(MC, onesim(values$h, values$h2, values$n.Y, values$grid.n, sampleY), simplify=TRUE))
     MC.frame <- data.frame(f_hat=I(t(simplify2array(MC.out[,1]))),
-                           apply(MC.out[,-c(1)], 2, unlist))    
+                           f_hat2=I(t(simplify2array(MC.out[,2]))),
+                           apply(MC.out[,-2:-1], 2, unlist))
+  })
+  
+  
+  output$rss <- renderText({
+    mean(MC.frame()$rss)
+  })
+  
+  output$rsquared <- renderText({
+    mean(MC.frame()$rsquared)
+  })
+  
+  output$mse <- renderText({
+    mean(MC.frame()$mse)
   })
   
   output$distPlot <- renderPlot({
@@ -122,7 +140,7 @@ shinyServer(function(input, output) {
   output$xyPlot <- renderPlot({
     data <- MC.frame()
     plot(values$g, colMeans(data$f_hat), col="darkseagreen",
-         xlab=expression(g), ylab=expression(hat(f)))
+         xlab=expression(g), ylab=expression(hat(f)), ylim=c(0,0.4))
     abline(a=values$beta0, b=values$beta1, col="blue")
     abline(a=mean(data$beta0_hat), b=mean(data$beta1_hat), col="red", lty=5)
   })
